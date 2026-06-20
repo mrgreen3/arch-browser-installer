@@ -33,7 +33,7 @@ PAGE_HTML = r"""<!doctype html>
   <svg xmlns="http://www.w3.org/2000/svg" width="300" height="120" viewBox="0 0 300 120">
     <rect width="300" height="120" rx="12" fill="#2c261d"/>
     <text x="150" y="70" text-anchor="middle" font-family="monospace" font-size="56"
-          font-weight="bold" fill="#c9b890">#!</text>
+          font-weight="bold" fill="#c9b890">^!</text>
     <text x="150" y="98" text-anchor="middle" font-family="monospace" font-size="15"
           fill="#c9c0b0" letter-spacing="5">FruitBang</text>
   </svg>
