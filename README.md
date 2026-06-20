@@ -22,7 +22,7 @@ sudo python3 abi-installer.py
 Or via the launcher script:
 
 ```bash
-fb-install
+abi-install
 ```
 
 ## Architecture
