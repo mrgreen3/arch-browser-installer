@@ -9,6 +9,8 @@ from http.server import HTTPServer
 from lib.server import Handler
 from lib.state import LOG_PATH
 
+__version__ = "0.1.0"
+
 PORT = 7777
 
 
