@@ -23,7 +23,6 @@
 
 ## Medium-term
 
-- [ ] Support for swap partition (optional, selectable in wizard)
 - [ ] EFI partition format validation before install (warn if not vfat)
 - [ ] Distro-agnostic config: move FruitBang-specific paths (`/run/archiso`, `airootfs`) to a config dict
 - [ ] Configurable live username (currently hardcoded as `live`)
@@ -31,7 +30,8 @@
 
 ## Backlog / Ideas
 
-- [ ] Encrypt root with LUKS (optional wizard step)
+- [ ] Encrypt root with LUKS (optional wizard step) — feature request only, not planned
+- [ ] LVM support — feature request only, not planned
 - [ ] Btrfs root with subvolumes as alternative to ext4
 - [ ] Log viewer panel in the browser (tail `/tmp/fb-install.log` via polling)
 - [ ] Dry-run mode for testing wizard flow without a real disk

@@ -195,8 +195,19 @@ PAGE_HTML = r"""<!doctype html>
 
 <div id="p-done" class="panel">
   <h2>Installation Complete</h2>
-  <p>Remove the ISO and reboot.</p>
+  <p>Remove the ISO and reboot into your new system.</p>
   <button onclick="doReboot()">Reboot</button>
+  <h2>Post-install checklist</h2>
+  <p><b>1. Networking</b><br>
+  Click the network icon in the panel.</p>
+  <p><b>2. Pacman keyring</b><br>
+  Run <code>~/Scripts/fix-keys</code> to initialise and populate the keyring before installing anything.</p>
+  <p><b>3. Update mirrors</b><br>
+  Run <code>sudo reflector --country GB --latest 10 --sort rate --save /etc/pacman.d/mirrorlist</code> (adjust country code as needed).</p>
+  <p><b>4. Install yay (AUR helper)</b><br>
+  Required to build MangoWM and AUR packages:<br>
+  <code>sudo pacman -S --needed git base-devel<br>
+git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si</code></p>
 </div>
 
 <script>
