@@ -29,14 +29,21 @@ PAGE_HTML = r"""<!doctype html>
 </style>
 </head>
 <body>
-<h1>FruitBang Installer</h1>
+<div style="text-align:center; margin-bottom:24px;">
+  <svg xmlns="http://www.w3.org/2000/svg" width="300" height="120" viewBox="0 0 300 120">
+    <rect width="300" height="120" rx="12" fill="#2c261d"/>
+    <text x="150" y="70" text-anchor="middle" font-family="monospace" font-size="56"
+          font-weight="bold" fill="#c9b890">#!</text>
+    <text x="150" y="98" text-anchor="middle" font-family="monospace" font-size="15"
+          fill="#c9c0b0" letter-spacing="5">FruitBang</text>
+  </svg>
+</div>
 <div id="err" class="err" style="display:none"></div>
 
 <div id="p-welcome" class="panel active">
-  <div class="warn"><b>Warning:</b> Installing will erase data on the target disk.
-  Back up anything important first.</div>
-  <p>Requirements: booted from FruitBang live ISO, 20GB+ target disk.</p>
-  <button onclick="show('mode')">Begin</button>
+  <div class="warn"><b>Warning:</b> Installing will erase the target disk — back up anything first.</div>
+  <p>Requirements: booted from FruitBang live ISO, 4GB+ RAM, 20GB+ target disk.</p>
+  <div style="text-align:center;"><button onclick="show('mode')">Begin</button></div>
 </div>
 
 <div id="p-mode" class="panel">
@@ -284,5 +291,8 @@ async function poll() {
 }
 async function doReboot() { await fetch('/api/reboot', {method:'POST', body:'{}'}); }
 </script>
+<footer style="text-align:center; margin-top:40px; font-size:0.8em; color:#6b6050;">
+  &copy; 2026 FruitBang &mdash; MIT Licence
+</footer>
 </body>
 </html>"""
