@@ -29,9 +29,22 @@ fb-install
 
 | File | Role |
 |------|------|
-| `abi-installer.py` | HTTP server, API routes, install logic, embedded HTML/CSS/JS |
+| `abi-installer.py` | Entry point — starts HTTP server |
+| `lib/ui.py` | Embedded HTML/CSS/JS wizard |
+| `lib/parse.py` | Pure helpers: `validate_name`, `parse_lsblk*`, `parse_rsync_progress`, `validate_install_cfg` |
+| `lib/state.py` | Shared install state, step weights, log path, `set_state`, `step_percent` |
+| `lib/system.py` | All install operations: partition, copy, configure, bootloader, cleanup |
+| `lib/server.py` | `Handler` — HTTP routes wiring the wizard to the install logic |
 
-Pure helper functions (`validate_name`, `parse_lsblk`, `parse_rsync_progress`, `step_percent`) are importable and unit-testable without running the server.
+Pure helpers in `lib/parse.py` and `lib/state.py` are importable and unit-testable without running the server or a live system.
+
+## Adapting for another distro
+
+Two things in `lib/system.py` are FruitBang-specific:
+
+**Live username** — `configure_user` renames the user `live`. If your ISO uses a different live username (e.g. `archie`, `user`), change the `live = "live"` line in that function.
+
+**Keymap / WM config** — `configure_keymap` writes `vconsole.conf` (generic) but also patches the xkb layout in `~/.config/mango/config.conf` (MangoWM-specific). Remove or replace that `sed` line if you're using a different window manager.
 
 ## Licence
 
