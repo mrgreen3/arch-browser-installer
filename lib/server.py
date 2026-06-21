@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler
 from .ui import PAGE_HTML
 from .parse import parse_lsblk, parse_lsblk_disks, validate_install_cfg
 from .state import STATE, STATE_LOCK, new_state, log
-from .system import do_autopart, do_install, is_uefi
+from .system import do_autopart, do_install, is_uefi, is_live_medium
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -67,8 +67,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "disk not found"}, 400)
             res = subprocess.run(["lsblk", "-no", "TYPE", disk],
                                  capture_output=True, text=True)
-            if res.stdout.strip().splitlines()[0] != "disk":
+            types = res.stdout.strip().splitlines()
+            if not types or types[0] != "disk":
                 return self._json({"ok": False, "error": f"{disk} is not a whole disk"}, 400)
+            if is_live_medium(disk):
+                return self._json({"ok": False,
+                                   "error": f"{disk} is the live install medium — refusing to erase"}, 400)
             try:
                 parts = do_autopart(disk)
                 return self._json({"ok": True, **parts})
@@ -89,6 +93,9 @@ class Handler(BaseHTTPRequestHandler):
             err = validate_install_cfg(body)
             if err:
                 return self._json({"ok": False, "error": err}, 400)
+            if is_live_medium(body["root_part"]):
+                return self._json({"ok": False,
+                                   "error": "root partition is on the live medium — refusing to install over it"}, 400)
             with STATE_LOCK:
                 STATE.update(new_state())
             threading.Thread(target=do_install, args=(body,), daemon=True).start()

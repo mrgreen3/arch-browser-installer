@@ -36,6 +36,42 @@ def is_uefi():
     return os.path.isdir("/sys/firmware/efi")
 
 
+def whole_disk(path):
+    """Resolve a partition or disk path to its parent whole-disk path.
+
+    A partition returns its disk (via lsblk pkname); a whole disk returns itself.
+    """
+    res = subprocess.run(["lsblk", "-no", "pkname", path],
+                         capture_output=True, text=True)
+    pk = res.stdout.strip().splitlines()
+    if pk and pk[0]:
+        return "/dev/" + pk[0]
+    return path
+
+
+def live_disk():
+    """Whole-disk path backing the running live medium, or None if undeterminable."""
+    res = subprocess.run(["findmnt", "-n", "-o", "SOURCE", "/run/archiso/bootmnt"],
+                         capture_output=True, text=True)
+    src = res.stdout.strip()
+    if not src:
+        return None
+    return whole_disk(src)
+
+
+def is_live_medium(target):
+    """True if target (disk or partition) sits on the running live medium's disk.
+
+    Fail-open: if the live disk cannot be determined, return False rather than
+    block a legitimate install. The destructive path still warns via the log.
+    """
+    live = live_disk()
+    if not live:
+        log("WARNING: could not determine live medium; skipping live-disk guard")
+        return False
+    return whole_disk(target) == live
+
+
 def do_autopart(disk):
     """Wipe disk, create partitions, format them. Returns {root_part, efi_part or None}."""
     uefi = is_uefi()
@@ -175,17 +211,27 @@ def configure_hostname(hostname):
 
 
 def configure_user(username, password):
-    """Rename the 'live' user to the chosen username, set password, fix ownership."""
+    """Rename the live 'live' account to the chosen username and set its password.
+
+    usermod rewrites /etc/passwd, /etc/shadow and group membership safely and moves
+    the home directory (uid/gid unchanged, so ownership is preserved). groupmod
+    renames the primary group if it matches the old login. Only absolute /home/live
+    paths baked into the user's own config files are rewritten — a targeted,
+    anchored replace, not the old blanket s/live/<user>/g across all of /etc.
+    """
     live = "live"
+    # Rename login, move and rename home dir in one operation.
+    chroot(f"usermod -l {username} -d /home/{username} -m {live}")
+    # Rename the user's primary group too, if one named after the old login exists.
+    chroot(f"getent group {live} >/dev/null && groupmod -n {username} {live} || true")
+    # Set the renamed account's password.
     subprocess.run(
         ["arch-chroot", MNT, "chpasswd"],
-        input=f"{live}:{password}\n", text=True, check=True,
+        input=f"{username}:{password}\n", text=True, check=True,
     )
-    chroot(f"find /home/{live} -type f -exec sed -i 's/{live}/{username}/g' {{}} +")
-    for f in ("group", "gshadow", "passwd", "shadow"):
-        chroot(f"sed -i 's/{live}/{username}/g' /etc/{f}")
-    chroot(f"mv /home/{live} /home/{username}")
-    chroot(f"chown -R {username}:users /home/{username}")
+    # Fix absolute /home/live paths in the user's config files (anchored, safe).
+    chroot(f"grep -rlZ '/home/{live}' /home/{username} 2>/dev/null | "
+           f"xargs -0 -r sed -i 's|/home/{live}|/home/{username}|g' || true")
 
 
 def install_grub(root_part, uefi):

@@ -4,6 +4,34 @@ import re
 NAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 RSYNC_PCT_RE = re.compile(r"\s(\d{1,3})%")
 
+# Allowlists mirror the <select> option values in lib/ui.py. Any value reaching
+# validate_install_cfg flows into root arch-chroot shell strings (see lib/system.py),
+# so only these known-safe strings are accepted. Keep in sync with ui.py dropdowns.
+VALID_TIMEZONES = frozenset({
+    "Europe/London", "Europe/Dublin", "Europe/Lisbon", "Europe/Paris",
+    "Europe/Brussels", "Europe/Amsterdam", "Europe/Berlin", "Europe/Vienna",
+    "Europe/Zurich", "Europe/Madrid", "Europe/Rome", "Europe/Warsaw",
+    "Europe/Stockholm", "Europe/Oslo", "Europe/Copenhagen", "Europe/Helsinki",
+    "Europe/Athens", "Europe/Bucharest", "Europe/Moscow", "Europe/Istanbul",
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Toronto", "America/Vancouver", "America/Sao_Paulo", "America/Mexico_City",
+    "America/Argentina/Buenos_Aires",
+    "Asia/Dubai", "Asia/Kolkata", "Asia/Bangkok", "Asia/Singapore",
+    "Asia/Shanghai", "Asia/Tokyo", "Asia/Seoul", "Asia/Jerusalem",
+    "Africa/Johannesburg", "Africa/Cairo", "Australia/Sydney", "Pacific/Auckland",
+    "UTC",
+})
+VALID_LOCALES = frozenset({
+    "en_GB.UTF-8", "en_US.UTF-8", "de_DE.UTF-8", "fr_FR.UTF-8", "es_ES.UTF-8",
+    "it_IT.UTF-8", "pt_PT.UTF-8", "pt_BR.UTF-8", "nl_NL.UTF-8", "pl_PL.UTF-8",
+    "ru_RU.UTF-8", "sv_SE.UTF-8", "nb_NO.UTF-8", "da_DK.UTF-8", "fi_FI.UTF-8",
+    "zh_CN.UTF-8", "ja_JP.UTF-8", "ko_KR.UTF-8",
+})
+VALID_KEYMAPS = frozenset({
+    "us", "gb", "de", "fr", "es", "it", "pt", "br", "nl", "pl",
+    "ru", "se", "no", "dk", "fi", "be", "ch",
+})
+
 
 
 def validate_name(s):
@@ -60,4 +88,10 @@ def validate_install_cfg(cfg):
         return "invalid username"
     if not cfg.get("password"):
         return "password required"
+    if cfg.get("timezone", "UTC") not in VALID_TIMEZONES:
+        return "invalid timezone"
+    if cfg.get("locale", "en_GB.UTF-8") not in VALID_LOCALES:
+        return "invalid locale"
+    if cfg.get("keymap", "us") not in VALID_KEYMAPS:
+        return "invalid keymap"
     return None
