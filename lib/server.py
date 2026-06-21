@@ -10,6 +10,16 @@ from .parse import parse_lsblk, parse_lsblk_disks, validate_install_cfg
 from .state import STATE, STATE_LOCK, new_state, log
 from .system import do_autopart, do_install, is_uefi, is_live_medium
 
+# Requests must carry one of these Host headers. The server binds localhost only,
+# but that alone doesn't stop another browser tab POSTing here: ui.py sends
+# text/plain bodies, which skip CORS preflight, so cross-origin/DNS-rebind
+# requests would otherwise reach the API. Port mirrors abi-installer.py PORT.
+ALLOWED_HOSTS = frozenset({
+    "127.0.0.1:7777",
+    "localhost:7777",
+    "fruitbang.install:7777",
+})
+
 
 class Handler(BaseHTTPRequestHandler):
     """Minimal HTTP handler: serves the installer page and JSON API routes."""
@@ -27,11 +37,17 @@ class Handler(BaseHTTPRequestHandler):
         """Serialise obj to JSON and send with optional status code."""
         self._send(code, json.dumps(obj))
 
+    def _host_ok(self):
+        """True if the request's Host header is an expected local value."""
+        return self.headers.get("Host", "") in ALLOWED_HOSTS
+
     def log_message(self, *a):
         pass  # silence default stderr logging
 
     def do_GET(self):
         """Serve the installer page and read-only API endpoints."""
+        if not self._host_ok():
+            return self._json({"ok": False, "error": "forbidden host"}, 403)
         if self.path == "/" or self.path == "/index.html":
             self._send(200, PAGE_HTML, "text/html")
         elif self.path == "/api/disks":
@@ -54,6 +70,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle write actions: autopart, partition validate, install, reboot."""
+        if not self._host_ok():
+            return self._json({"ok": False, "error": "forbidden host"}, 403)
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length).decode() if length else "{}"
         try:
