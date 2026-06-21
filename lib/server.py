@@ -115,6 +115,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False,
                                    "error": "root partition is on the live medium — refusing to install over it"}, 400)
             with STATE_LOCK:
+                if STATE["percent"] > 0 and not STATE["done"] and STATE["error"] is None:
+                    return self._json({"ok": False, "error": "install already in progress"}, 409)
                 STATE.update(new_state())
             threading.Thread(target=do_install, args=(body,), daemon=True).start()
             self._json({"ok": True})

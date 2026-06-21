@@ -10,7 +10,18 @@ from .state import (
     log, set_state, step_percent,
 )
 
-CONSOLE_KEYMAP = {"gb": "uk", "br": "br-abnt2"}
+# Map ui.py xkb layout values to valid console keymaps (from localectl
+# list-keymaps). Layouts absent here pass through unchanged because their xkb
+# name already exists as a console keymap (us, de, fr, es, it, nl, pl, ru,
+# no, dk, fi). Listed entries have no identically-named console keymap.
+CONSOLE_KEYMAP = {
+    "gb": "uk",
+    "br": "br-abnt2",
+    "pt": "pt-latin1",
+    "se": "sv-latin1",
+    "be": "be-latin1",
+    "ch": "sg",
+}
 
 
 def run(cmd, **kw):
@@ -153,7 +164,9 @@ def configure_system():
     """Generate fstab, set machine ID, write mkinitcpio preset, rebuild initramfs."""
     chroot("systemd-machine-id-setup")
     res = subprocess.run(["genfstab", "-U", MNT], capture_output=True, text=True, check=True)
-    with open(MNT + "/etc/fstab", "a") as f:
+    # Truncate, not append: a copied airootfs may ship its own fstab, which would
+    # otherwise leave stale/duplicate entries alongside the generated ones.
+    with open(MNT + "/etc/fstab", "w") as f:
         f.write(res.stdout)
     preset = (
         "PRESETS=('default' 'fallback')\n"
@@ -242,7 +255,10 @@ def install_grub(root_part, uefi):
     else:
         res = subprocess.run(["lsblk", "-no", "pkname", root_part],
                              capture_output=True, text=True)
-        disk = "/dev/" + res.stdout.strip().splitlines()[0]
+        pk = res.stdout.strip().splitlines()
+        if not pk or not pk[0]:
+            raise RuntimeError(f"could not determine parent disk of {root_part}")
+        disk = "/dev/" + pk[0]
         run(["grub-install", "--target=i386-pc",
              "--boot-directory=" + MNT + "/boot", disk])
     chroot("grub-mkconfig -o /boot/grub/grub.cfg")
