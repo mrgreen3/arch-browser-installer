@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import re
 import subprocess
 import time
 
@@ -134,6 +135,95 @@ def do_autopart(disk):
         root_part = parts[0]
         run(["mkfs.ext4", "-F", root_part])
         return {"root_part": root_part, "efi_part": None}
+
+
+def _part_sort_key(path):
+    """Sort /dev/sda10 after /dev/sda2 by ordering on the trailing number."""
+    m = re.search(r"(\d+)$", path)
+    return (path[: m.start()] if m else path, int(m.group(1)) if m else 0)
+
+
+def build_sfdisk_script(parts, uefi):
+    """Build sfdisk script text for a validated custom layout.
+
+    Lines use the form `,<size>,<type>` (default start, given size, type code);
+    an empty size means "use the remaining space" and is only valid on the last
+    entry. GPT type codes: U=EFI, S=swap, L=Linux. MBR: 82=swap, 83=Linux, with
+    the root partition flagged bootable (*).
+    """
+    lines = ["label: gpt" if uefi else "label: dos"]
+    for p in parts:
+        size = (p.get("size") or "").strip()
+        role = p["role"]
+        if uefi:
+            code = {"efi": "U", "swap": "S", "root": "L", "home": "L"}[role]
+            lines.append(f",{size},{code}")
+        else:
+            code = {"swap": "82", "root": "83", "home": "83"}[role]
+            flag = ",*" if role == "root" else ""
+            lines.append(f",{size},{code}{flag}")
+    return "\n".join(lines) + "\n"
+
+
+def do_custompart(disk, parts, uefi):
+    """Wipe disk, create the user-defined layout, format each partition.
+
+    Returns {root_part, efi_part, swap_part, home_part}, with absent roles None.
+    Partitions are created in list order, so the lsblk children (sorted by the
+    trailing partition number) map positionally back onto the input specs.
+    """
+    run(["wipefs", "-a", disk])
+
+    script = build_sfdisk_script(parts, uefi)
+    log("custom sfdisk script:\n" + script)
+    res = subprocess.run(
+        ["sfdisk", "--no-reread", disk],
+        input=script, text=True, capture_output=True,
+    )
+    log("sfdisk stdout: " + res.stdout)
+    log("sfdisk stderr: " + res.stderr)
+    if res.returncode != 0:
+        raise RuntimeError(f"sfdisk failed: {res.stderr.strip()}")
+
+    subprocess.run(["partprobe", disk], capture_output=True)
+    time.sleep(1)
+
+    res2 = subprocess.run(
+        ["lsblk", "-J", "-o", "NAME,TYPE", disk],
+        capture_output=True, text=True, check=True,
+    )
+    data = json.loads(res2.stdout)
+    created = []
+    for dev in data.get("blockdevices", []):
+        for child in dev.get("children", []):
+            if child.get("type") == "part":
+                created.append("/dev/" + child["name"])
+    created.sort(key=_part_sort_key)
+    if len(created) != len(parts):
+        raise RuntimeError(f"expected {len(parts)} partitions, got {created}")
+
+    result = {"root_part": None, "efi_part": None,
+              "swap_part": None, "home_part": None}
+    for spec, path in zip(parts, created):
+        role = spec["role"]
+        if role == "efi":
+            run(["mkfs.vfat", "-F32", path])
+            result["efi_part"] = path
+        elif role == "swap":
+            run(["mkswap", path])
+            result["swap_part"] = path
+        else:
+            fs = spec.get("fs", "ext4")
+            if fs == "ext4":
+                run(["mkfs.ext4", "-F", path])
+            elif fs == "btrfs":
+                run(["mkfs.btrfs", "-f", path])
+            elif fs == "xfs":
+                run(["mkfs.xfs", "-f", path])
+            else:
+                raise RuntimeError(f"unsupported filesystem: {fs}")
+            result["root_part" if role == "root" else "home_part"] = path
+    return result
 
 
 def copy_airootfs():
@@ -300,6 +390,13 @@ def do_install(cfg):
         if uefi and cfg.get("efi_part"):
             run(["mkdir", "-p", MNT + "/boot"])
             run(["mount", cfg["efi_part"], MNT + "/boot"])
+        # Mount extras before genfstab (run later in configure_system) so they
+        # land in the installed fstab automatically.
+        if cfg.get("home_part"):
+            run(["mkdir", "-p", MNT + "/home"])
+            run(["mount", cfg["home_part"], MNT + "/home"])
+        if cfg.get("swap_part"):
+            run(["swapon", cfg["swap_part"]])
         set_state(percent=step_percent(1, 100))
 
         set_state(step=INSTALL_STEPS[2], percent=step_percent(2, 0))
