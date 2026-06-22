@@ -69,6 +69,77 @@ def parse_lsblk_disks(json_str):
     return out
 
 
+PART_SIZE_RE = re.compile(r"^\d{1,6}(\.\d{1,2})?[MGT]$")
+VALID_FS = frozenset({"ext4", "btrfs", "xfs"})
+VALID_ROLES = frozenset({"efi", "root", "swap", "home"})
+
+
+def _size_to_mib(size):
+    """Convert a validated size string (e.g. '512M', '30G') to MiB as a float."""
+    num, unit = float(size[:-1]), size[-1]
+    return num * {"M": 1, "G": 1024, "T": 1024 * 1024}[unit]
+
+
+def validate_custom_layout(parts, uefi):
+    """Return an error string if the custom partition layout is invalid, else None.
+
+    parts: ordered list of {"size": "30G" | "", "role": ..., "fs": ...}.
+    Only the final entry may omit size, which means "use the remaining space".
+    Every value here either feeds an sfdisk script (sizes, strictly regex-checked)
+    or maps to a fixed argv (roles -> type codes, fs -> mkfs binary); no field
+    reaches a shell. Keep the allowlists in sync with ui.py.
+    """
+    if not isinstance(parts, list) or not parts:
+        return "no partitions defined"
+    if len(parts) > 8:
+        return "too many partitions (max 8)"
+
+    roles = []
+    for p in parts:
+        if not isinstance(p, dict):
+            return "malformed partition entry"
+        role = p.get("role")
+        if role not in VALID_ROLES:
+            return f"invalid role: {role!r}"
+        roles.append(role)
+
+    if roles.count("root") != 1:
+        return "exactly one root partition is required"
+    if roles.count("swap") > 1:
+        return "at most one swap partition"
+    if roles.count("home") > 1:
+        return "at most one home partition"
+
+    if uefi:
+        if roles.count("efi") != 1:
+            return "UEFI requires exactly one EFI partition"
+    else:
+        if roles.count("efi") != 0:
+            return "EFI partition is only used in UEFI mode"
+        if len(parts) > 4:
+            return "MBR supports at most 4 partitions"
+
+    last = len(parts) - 1
+    for i, p in enumerate(parts):
+        size = (p.get("size") or "").strip()
+        if size == "":
+            if i != last:
+                return "only the last partition may use remaining space"
+        elif not PART_SIZE_RE.match(size):
+            return f"invalid size: {p.get('size')!r} (use e.g. 512M, 30G)"
+
+        if p["role"] in ("root", "home") and p.get("fs", "ext4") not in VALID_FS:
+            return f"invalid filesystem: {p.get('fs')!r}"
+
+        if p["role"] == "efi":
+            if size == "":
+                return "EFI partition needs an explicit size (e.g. 512M)"
+            if _size_to_mib(size) < 256:
+                return "EFI partition should be at least 256M"
+
+    return None
+
+
 def parse_rsync_progress(line):
     """Extract integer percent from an rsync --info=progress2 line, or None."""
     m = RSYNC_PCT_RE.search(line)
