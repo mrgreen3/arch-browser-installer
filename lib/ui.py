@@ -102,7 +102,7 @@ PAGE_HTML = r"""<!doctype html>
   <p>If your disk is not yet partitioned, open a terminal and run:</p>
   <pre>sudo cfdisk /dev/sdX</pre>
   <p>Create a root partition (and a 512M EFI partition for UEFI). Return here when done.</p>
-  <button onclick="checkPartitions()">Continue</button>
+  <button onclick="loadDisks()">Re-scan partitions</button>
 </div>
 
 <div id="p-install" class="panel">
@@ -286,17 +286,32 @@ async function confirmAutopart() {
 async function showManual() {
   showErr('');
   await loadDisks();
-  show('disk');
 }
 async function loadDisks() {
-  const r = await fetch('/api/disks'); const d = await r.json();
+  showErr('');
+  let d;
+  try {
+    const r = await fetch('/api/disks'); d = await r.json();
+  } catch (e) { return showErr('Could not query partitions: ' + e); }
+  if (!d || !d.ok) return showErr((d && d.error) || 'Could not query partitions');
   const root = document.getElementById('root'), efi = document.getElementById('efi');
+  // Rebuild from scratch so re-entry doesn't duplicate options.
+  root.innerHTML = '';
+  efi.innerHTML = '<option value="">none</option>';
+  const parts = d.disks || [];
+  if (!parts.length) {
+    // Nothing to select — send the user to the partitioning instructions
+    // instead of stranding them on an empty dropdown.
+    show('part');
+    return;
+  }
   document.getElementById('disks').textContent =
-    d.disks.map(p => p.path + ' (' + p.size + ')').join(', ') || 'none found';
-  d.disks.forEach(p => {
+    parts.map(p => p.path + ' (' + p.size + ')').join(', ');
+  parts.forEach(p => {
     root.add(new Option(p.path + ' (' + p.size + ')', p.path));
     efi.add(new Option(p.path + ' (' + p.size + ')', p.path));
   });
+  show('disk');
 }
 async function checkPartitions() {
   showErr('');
