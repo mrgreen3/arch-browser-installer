@@ -243,7 +243,8 @@ def configure_user(username, password):
         input=f"{username}:{password}\n", text=True, check=True,
     )
     # Fix absolute /home/live paths in the user's config files (anchored, safe).
-    chroot(f"grep -rlZ '/home/{live}' /home/{username} 2>/dev/null | "
+    # Fix absolute /home/live paths in the user's config files (text only; -I skips binaries).
+    chroot(f"grep -rlZI '/home/{live}' /home/{username} 2>/dev/null | "
            f"xargs -0 -r sed -i 's|/home/{live}|/home/{username}|g' || true")
 
 

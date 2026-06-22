@@ -26,6 +26,24 @@ PAGE_HTML = r"""<!doctype html>
   #bar { background:#2c261d; border-radius:6px; height:24px; overflow:hidden; margin:12px 0; }
   #fill { background:#c9b890; height:100%; width:0%; transition:width 0.3s; }
   pre { background:#2c261d; border-radius:6px; padding:8px; font-size:0.85em; white-space:pre-wrap; }
+  #steps { display:flex; justify-content:center; margin-bottom:24px; }
+  .step { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; opacity:.35; }
+  .step.active { opacity:1; }
+  .step-num { background:#2c261d; color:#c9b890; border:2px solid #3a3228; border-radius:50%;
+              width:28px; height:28px; line-height:28px; text-align:center; font-size:.85em; }
+  .step.active .step-num { background:#c9b890; color:#201b14; border-color:#c9b890; }
+  .step-lbl { font-size:.7em; color:#8c8070; }
+  .step.active .step-lbl { color:#c9c0b0; }
+  #pct-num { display:block; font-size:3em; font-weight:bold; color:#c9b890;
+             text-align:center; line-height:1; margin:12px 0 4px; }
+  #step { display:block; text-align:center; color:#8c8070; margin-bottom:12px; font-size:.9em; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+  #fill.running { animation:pulse 1.5s ease-in-out infinite; }
+  #logtail-wrap { background:#0d0b07; border-radius:6px; padding:4px 8px;
+                  max-height:200px; overflow-y:auto; margin-top:8px; }
+  #logtail-wrap pre { background:transparent; padding:0; margin:0; font-size:.8em; color:#7a9960; }
+  .section-lbl { color:#8c8070; font-size:.85em; margin:12px 0 4px; }
+  .section-rule { border:none; border-top:1px solid #3a3228; margin:16px 0 4px; }
 </style>
 </head>
 <body>
@@ -37,6 +55,13 @@ PAGE_HTML = r"""<!doctype html>
     <text x="150" y="98" text-anchor="middle" font-family="monospace" font-size="15"
           fill="#c9c0b0" letter-spacing="5">FruitBang</text>
   </svg>
+</div>
+<div id="steps">
+  <div class="step active" id="s-welcome"><div class="step-num">1</div><div class="step-lbl">Welcome</div></div>
+  <div class="step" id="s-disk"><div class="step-num">2</div><div class="step-lbl">Disk</div></div>
+  <div class="step" id="s-configure"><div class="step-num">3</div><div class="step-lbl">Configure</div></div>
+  <div class="step" id="s-install"><div class="step-num">4</div><div class="step-lbl">Install</div></div>
+  <div class="step" id="s-done"><div class="step-num">5</div><div class="step-lbl">Done</div></div>
 </div>
 <div id="err" class="err" style="display:none"></div>
 
@@ -82,17 +107,21 @@ PAGE_HTML = r"""<!doctype html>
 
 <div id="p-install" class="panel">
   <h2>Installing</h2>
+  <span id="pct-num">0%</span>
+  <span id="step">Starting…</span>
   <div id="bar"><div id="fill"></div></div>
-  <p id="step">Starting...</p>
-  <pre id="logtail"></pre>
+  <div id="logtail-wrap"><pre id="logtail"></pre></div>
 </div>
 
 <div id="p-configure" class="panel">
   <h2>Configure System</h2>
+  <p class="section-lbl">System identity</p>
   <label>Hostname: <input type="text" id="hostname" value="fruitbang"></label>
   <label>Username: <input type="text" id="username"></label>
   <label>Password: <input type="password" id="pw1"></label>
   <label>Confirm password: <input type="password" id="pw2"></label>
+  <hr class="section-rule">
+  <p class="section-lbl">Localisation</p>
   <label>Timezone:
     <select id="timezone">
       <optgroup label="Europe">
@@ -212,9 +241,17 @@ git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si</code></p>
 
 <script>
 const sel = {};  // chosen partitions carried through panels
+const STEP_MAP = {
+  welcome:'welcome', mode:'disk', autodisk:'disk',
+  disk:'disk', part:'disk', configure:'configure',
+  install:'install', done:'done'
+};
 function show(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('p-' + name).classList.add('active');
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  const step = STEP_MAP[name];
+  if (step) document.getElementById('s-' + step).classList.add('active');
 }
 function showErr(msg) {
   const e = document.getElementById('err');
@@ -289,15 +326,17 @@ async function startInstall() {
   if (!d.ok) return showErr(d.error);
   _maxPct = 0;
   show('install');
+  document.getElementById('fill').classList.add('running');
   poll();
 }
 async function poll() {
   const r = await fetch('/api/progress'); const s = await r.json();
   if (s.percent > _maxPct) _maxPct = s.percent;
   document.getElementById('fill').style.width = _maxPct + '%';
-  document.getElementById('step').textContent = s.step + ' (' + _maxPct + '%)';
+  document.getElementById('pct-num').textContent = _maxPct + '%';
+  document.getElementById('step').textContent = s.step || '';
   if (s.error) { showErr(s.error); return; }
-  if (s.done) { show('done'); return; }
+  if (s.done) { document.getElementById('fill').classList.remove('running'); show('done'); return; }
   setTimeout(poll, 2000);
 }
 async function doReboot() { await fetch('/api/reboot', {method:'POST', body:'{}'}); }
