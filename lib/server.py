@@ -6,9 +6,9 @@ import threading
 from http.server import BaseHTTPRequestHandler
 
 from .ui import PAGE_HTML
-from .parse import parse_lsblk, parse_lsblk_disks, validate_install_cfg
+from .parse import parse_lsblk, parse_lsblk_disks, validate_install_cfg, validate_custom_layout
 from .state import STATE, STATE_LOCK, new_state, log
-from .system import do_autopart, do_install, is_uefi, is_live_medium
+from .system import do_autopart, do_custompart, do_install, is_uefi, is_live_medium
 
 # Requests must carry one of these Host headers. The server binds localhost only,
 # but that alone doesn't stop another browser tab POSTing here: ui.py sends
@@ -96,6 +96,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **parts})
             except Exception as e:
                 log("autopart ERROR: " + str(e))
+                return self._json({"ok": False, "error": str(e)}, 500)
+
+        elif self.path == "/api/custompart":
+            disk = body.get("disk", "")
+            if not disk or not os.path.exists(disk):
+                return self._json({"ok": False, "error": "disk not found"}, 400)
+            res = subprocess.run(["lsblk", "-no", "TYPE", disk],
+                                 capture_output=True, text=True)
+            types = res.stdout.strip().splitlines()
+            if not types or types[0] != "disk":
+                return self._json({"ok": False, "error": f"{disk} is not a whole disk"}, 400)
+            if is_live_medium(disk):
+                return self._json({"ok": False,
+                                   "error": f"{disk} is the live install medium — refusing to erase"}, 400)
+            parts = body.get("parts", [])
+            err = validate_custom_layout(parts, is_uefi())
+            if err:
+                return self._json({"ok": False, "error": err}, 400)
+            try:
+                result = do_custompart(disk, parts, is_uefi())
+                return self._json({"ok": True, **result})
+            except Exception as e:
+                log("custompart ERROR: " + str(e))
                 return self._json({"ok": False, "error": str(e)}, 500)
 
         elif self.path == "/api/partition":
