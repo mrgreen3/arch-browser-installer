@@ -11,7 +11,9 @@ from lib.parse import (
     parse_lsblk_disks,
     parse_rsync_progress,
     validate_install_cfg,
+    validate_custom_layout,
 )
+from lib.system import build_sfdisk_script
 
 
 class TestValidateName(unittest.TestCase):
@@ -118,6 +120,85 @@ class TestValidateInstallCfg(unittest.TestCase):
     def test_invalid_keymap(self):
         cfg = {**self.BASE, "keymap": "zz"}
         self.assertIsNotNone(validate_install_cfg(cfg))
+
+
+class TestValidateCustomLayout(unittest.TestCase):
+    def test_valid_uefi_minimal(self):
+        parts = [{"size": "512M", "role": "efi"},
+                 {"size": "", "role": "root", "fs": "ext4"}]
+        self.assertIsNone(validate_custom_layout(parts, True))
+
+    def test_valid_uefi_full(self):
+        parts = [{"size": "512M", "role": "efi"},
+                 {"size": "4G", "role": "swap"},
+                 {"size": "30G", "role": "root", "fs": "btrfs"},
+                 {"size": "", "role": "home", "fs": "ext4"}]
+        self.assertIsNone(validate_custom_layout(parts, True))
+
+    def test_valid_bios(self):
+        self.assertIsNone(
+            validate_custom_layout([{"size": "", "role": "root", "fs": "ext4"}], False))
+
+    def test_empty(self):
+        self.assertIsNotNone(validate_custom_layout([], True))
+
+    def test_no_root(self):
+        self.assertIsNotNone(
+            validate_custom_layout([{"size": "512M", "role": "efi"}], True))
+
+    def test_two_roots(self):
+        parts = [{"size": "10G", "role": "root"}, {"size": "", "role": "root"}]
+        self.assertIsNotNone(validate_custom_layout(parts, True))
+
+    def test_efi_in_bios(self):
+        parts = [{"size": "512M", "role": "efi"}, {"size": "", "role": "root"}]
+        self.assertIsNotNone(validate_custom_layout(parts, False))
+
+    def test_missing_efi_in_uefi(self):
+        self.assertIsNotNone(
+            validate_custom_layout([{"size": "", "role": "root"}], True))
+
+    def test_blank_size_not_last(self):
+        parts = [{"size": "", "role": "root"}, {"size": "512M", "role": "efi"}]
+        self.assertIsNotNone(validate_custom_layout(parts, True))
+
+    def test_bad_size(self):
+        parts = [{"size": "512MB", "role": "efi"}, {"size": "", "role": "root"}]
+        self.assertIsNotNone(validate_custom_layout(parts, True))
+
+    def test_efi_too_small(self):
+        parts = [{"size": "100M", "role": "efi"}, {"size": "", "role": "root"}]
+        self.assertIsNotNone(validate_custom_layout(parts, True))
+
+    def test_bad_fs(self):
+        parts = [{"size": "512M", "role": "efi"},
+                 {"size": "", "role": "root", "fs": "zfs"}]
+        self.assertIsNotNone(validate_custom_layout(parts, True))
+
+    def test_bad_role(self):
+        parts = [{"size": "1G", "role": "bogus"}, {"size": "", "role": "root"}]
+        self.assertIsNotNone(validate_custom_layout(parts, True))
+
+
+class TestBuildSfdiskScript(unittest.TestCase):
+    def test_uefi_full(self):
+        parts = [{"size": "512M", "role": "efi"},
+                 {"size": "4G", "role": "swap"},
+                 {"size": "30G", "role": "root"},
+                 {"size": "", "role": "home"}]
+        script = build_sfdisk_script(parts, True)
+        self.assertEqual(
+            script,
+            "label: gpt\n,512M,U\n,4G,S\n,30G,L\n,,L\n")
+
+    def test_bios_root_remainder(self):
+        script = build_sfdisk_script([{"size": "", "role": "root"}], False)
+        self.assertEqual(script, "label: dos\n,,83,*\n")
+
+    def test_bios_swap_then_root(self):
+        parts = [{"size": "4G", "role": "swap"}, {"size": "", "role": "root"}]
+        script = build_sfdisk_script(parts, False)
+        self.assertEqual(script, "label: dos\n,4G,82\n,,83,*\n")
 
 
 if __name__ == "__main__":
