@@ -32,6 +32,8 @@ PAGE_HTML = r"""<!doctype html>
   .step-num { background:#2c261d; color:#c9b890; border:2px solid #3a3228; border-radius:50%;
               width:28px; height:28px; line-height:28px; text-align:center; font-size:.85em; }
   .step.active .step-num { background:#c9b890; color:#201b14; border-color:#c9b890; }
+  .step.done .step-num { background:#c9b890; color:#201b14; border-color:#c9b890; }
+  .step.done { opacity:.7; }
   .step-lbl { font-size:.7em; color:#8c8070; }
   .step.active .step-lbl { color:#c9c0b0; }
   #pct-num { display:block; font-size:3em; font-weight:bold; color:#c9b890;
@@ -261,12 +263,17 @@ const STEP_MAP = {
   disk:'disk', part:'disk', configure:'configure',
   install:'install', done:'done'
 };
+const STEP_ORDER = ['welcome','disk','configure','install','done'];
 function show(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('p-' + name).classList.add('active');
-  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
   const step = STEP_MAP[name];
-  if (step) document.getElementById('s-' + step).classList.add('active');
+  const activeIdx = STEP_ORDER.indexOf(step);
+  document.querySelectorAll('.step').forEach((el, i) => {
+    el.classList.remove('active','done');
+    if (i < activeIdx) el.classList.add('done');
+    else if (i === activeIdx) el.classList.add('active');
+  });
 }
 function showErr(msg) {
   const e = document.getElementById('err');
