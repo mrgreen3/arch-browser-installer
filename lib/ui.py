@@ -76,9 +76,11 @@ PAGE_HTML = r"""<!doctype html>
   <p><b>Auto</b> — wipe a whole disk and partition it automatically.</p>
   <p><b>Custom</b> — wipe a whole disk and define your own partitions.</p>
   <p><b>Manual</b> — you have already partitioned; select existing partitions.</p>
-  <button onclick="showAuto()">Auto — erase whole disk</button>
-  <button onclick="showCustom()">Custom — define partitions</button>
-  <button onclick="showManual()">Manual — select partitions</button>
+  <div style="display:flex;gap:8px;">
+    <button style="flex:1" onclick="showAuto()">Auto</button>
+    <button style="flex:1" onclick="showCustom()">Custom</button>
+    <button style="flex:1" onclick="showManual()">Manual</button>
+  </div>
 </div>
 
 <div id="p-autodisk" class="panel">
