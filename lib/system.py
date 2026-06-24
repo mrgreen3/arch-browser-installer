@@ -413,8 +413,8 @@ def do_install(cfg):
         set_state(step=INSTALL_STEPS[5], percent=step_percent(5, 20))
         configure_hostname(cfg["hostname"])
         set_state(percent=step_percent(5, 50))
-        configure_timezone(cfg.get("timezone", "UTC"))
-        configure_locale(cfg.get("locale", "en_GB.UTF-8"))
+        configure_timezone(cfg.get("timezone", "America/Montreal"))
+        configure_locale(cfg.get("locale", "en_US.UTF-8"))
         set_state(percent=step_percent(5, 100))
 
         set_state(step=INSTALL_STEPS[6], percent=step_percent(6, 50))

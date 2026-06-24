@@ -14,7 +14,7 @@ VALID_TIMEZONES = frozenset({
     "Europe/Stockholm", "Europe/Oslo", "Europe/Copenhagen", "Europe/Helsinki",
     "Europe/Athens", "Europe/Bucharest", "Europe/Moscow", "Europe/Istanbul",
     "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
-    "America/Toronto", "America/Vancouver", "America/Sao_Paulo", "America/Mexico_City",
+    "America/Toronto", "America/Montreal", "America/Vancouver", "America/Sao_Paulo", "America/Mexico_City",
     "America/Argentina/Buenos_Aires",
     "Asia/Dubai", "Asia/Kolkata", "Asia/Bangkok", "Asia/Singapore",
     "Asia/Shanghai", "Asia/Tokyo", "Asia/Seoul", "Asia/Jerusalem",
@@ -159,9 +159,9 @@ def validate_install_cfg(cfg):
         return "invalid username"
     if not cfg.get("password"):
         return "password required"
-    if cfg.get("timezone", "UTC") not in VALID_TIMEZONES:
+    if cfg.get("timezone", "America/Montreal") not in VALID_TIMEZONES:
         return "invalid timezone"
-    if cfg.get("locale", "en_GB.UTF-8") not in VALID_LOCALES:
+    if cfg.get("locale", "en_US.UTF-8") not in VALID_LOCALES:
         return "invalid locale"
     if cfg.get("keymap", "us") not in VALID_KEYMAPS:
         return "invalid keymap"
