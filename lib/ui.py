@@ -91,6 +91,7 @@ PAGE_HTML = r"""<!doctype html>
   <label>Disk: <select id="wholedisk"></select></label>
   <p id="autodisk-uefi"></p>
   <button class="danger" onclick="confirmAutopart()">Erase disk and partition</button>
+  <button onclick="show('mode')">← Back</button>
 </div>
 
 <div id="p-custom" class="panel">
@@ -101,6 +102,7 @@ PAGE_HTML = r"""<!doctype html>
   <div id="partrows"></div>
   <button onclick="addRow()">+ Add partition</button>
   <hr class="section-rule">
+  <button onclick="show('mode')">← Back</button>
   <button class="danger" onclick="createLayout()">Create layout and format</button>
 </div>
 
@@ -112,6 +114,7 @@ PAGE_HTML = r"""<!doctype html>
   <label>EFI partition (UEFI only, else leave blank):
     <select id="efi"><option value="">none</option></select></label>
   <button onclick="checkPartitions()">Continue</button>
+  <button onclick="show('mode')">← Back</button>
 </div>
 
 <div id="p-part" class="panel">
@@ -120,6 +123,7 @@ PAGE_HTML = r"""<!doctype html>
   <pre>sudo cfdisk /dev/sdX</pre>
   <p>Create a root partition (and a 512M EFI partition for UEFI). Return here when done.</p>
   <button onclick="loadDisks()">Re-scan partitions</button>
+  <button onclick="show('mode')">← Back</button>
 </div>
 
 <div id="p-install" class="panel">
