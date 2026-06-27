@@ -70,7 +70,19 @@ PAGE_HTML = r"""<!doctype html>
 <div id="p-welcome" class="panel active">
   <div class="warn"><b>Warning:</b> Installing will erase the target disk — back up anything first.</div>
   <p>Requirements: booted from FruitBang live ISO, 4GB+ RAM, 20GB+ target disk.</p>
-  <div style="text-align:center;"><button onclick="show('mode')">Begin</button></div>
+  <div style="display:flex;gap:8px;justify-content:center;">
+    <button onclick="loadHardware()">Check hardware</button>
+    <button onclick="show('mode')">Begin</button>
+  </div>
+</div>
+
+<div id="p-hardware" class="panel">
+  <h2>Hardware</h2>
+  <div id="hw-content">Loading…</div>
+  <div style="margin-top:16px;">
+    <button onclick="show('welcome')">Back</button>
+    <button onclick="show('mode')">Begin install</button>
+  </div>
 </div>
 
 <div id="p-mode" class="panel">
@@ -90,6 +102,7 @@ PAGE_HTML = r"""<!doctype html>
   <div class="warn"><b>WARNING: All data on the selected disk will be permanently erased.</b></div>
   <label>Disk: <select id="wholedisk"></select></label>
   <p id="autodisk-uefi"></p>
+  <button onclick="show('mode')">Back</button>
   <button class="danger" onclick="confirmAutopart()">Erase disk and partition</button>
 </div>
 
@@ -101,6 +114,7 @@ PAGE_HTML = r"""<!doctype html>
   <div id="partrows"></div>
   <button onclick="addRow()">+ Add partition</button>
   <hr class="section-rule">
+  <button onclick="show('mode')">Back</button>
   <button class="danger" onclick="createLayout()">Create layout and format</button>
 </div>
 
@@ -111,6 +125,7 @@ PAGE_HTML = r"""<!doctype html>
   <label>Root partition: <select id="root"></select></label>
   <label>EFI partition (UEFI only, else leave blank):
     <select id="efi"><option value="">none</option></select></label>
+  <button onclick="show('mode')">Back</button>
   <button onclick="checkPartitions()">Continue</button>
 </div>
 
@@ -119,6 +134,7 @@ PAGE_HTML = r"""<!doctype html>
   <p>If your disk is not yet partitioned, open a terminal and run:</p>
   <pre>sudo cfdisk /dev/sdX</pre>
   <p>Create a root partition (and a 512M EFI partition for UEFI). Return here when done.</p>
+  <button onclick="show('mode')">Back</button>
   <button onclick="loadDisks()">Re-scan partitions</button>
 </div>
 
@@ -260,7 +276,7 @@ git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si</code></p>
 <script>
 const sel = {};  // chosen partitions carried through panels
 const STEP_MAP = {
-  welcome:'welcome', mode:'disk', autodisk:'disk', custom:'disk',
+  welcome:'welcome', hardware:'welcome', mode:'disk', autodisk:'disk', custom:'disk',
   disk:'disk', part:'disk', configure:'configure',
   install:'install', done:'done'
 };
@@ -464,6 +480,32 @@ async function poll() {
   setTimeout(poll, 2000);
 }
 async function doReboot() { await fetch('/api/reboot', {method:'POST', body:'{}'}); }
+async function loadHardware() {
+  show('hardware');
+  const el = document.getElementById('hw-content');
+  el.textContent = 'Loading…';
+  try {
+    const r = await fetch('/api/hardware');
+    const d = await r.json();
+    if (!d.ok) { el.textContent = 'Could not load hardware info.'; return; }
+    const lines = [];
+    lines.push('CPU:     ' + d.cpu + ' (' + d.cpu_cores + ' cores)');
+    lines.push('RAM:     ' + d.ram_gb + ' GB');
+    lines.push('Boot:    ' + (d.uefi ? 'UEFI' : 'BIOS/Legacy'));
+    if (d.gpus && d.gpus.length) lines.push('GPU:     ' + d.gpus.join(', '));
+    if (d.network && d.network.length) lines.push('Network: ' + d.network.join(', '));
+    if (d.disks && d.disks.length) {
+      lines.push('');
+      lines.push('Disks:');
+      d.disks.forEach(dk => lines.push('  ' + dk.name + '  ' + dk.size + (dk.model ? '  ' + dk.model : '')));
+    }
+    el.innerHTML = '<pre>' + lines.join('\n') + '</pre>';
+    if (d.ram_gb < 4) el.innerHTML += '<div class="warn">RAM below 4GB minimum.</div>';
+    if (!d.disks || !d.disks.length) el.innerHTML += '<div class="warn">No target disks detected.</div>';
+  } catch (e) {
+    el.textContent = 'Error: ' + e;
+  }
+}
 </script>
 <footer style="text-align:center; margin-top:40px; font-size:0.8em; color:#6b6050;">
   &copy; 2026 FruitBang &mdash; MIT Licence
