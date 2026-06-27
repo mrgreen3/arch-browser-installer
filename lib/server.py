@@ -21,6 +21,75 @@ ALLOWED_HOSTS = frozenset({
 })
 
 
+def _hardware_info():
+    """Read hardware summary from /proc and sysfs. No root required."""
+    info = {}
+
+    # CPU
+    try:
+        cpu_lines = open("/proc/cpuinfo").read().splitlines()
+        models = [l.split(":", 1)[1].strip() for l in cpu_lines if l.startswith("model name")]
+        cores = len([l for l in cpu_lines if l.startswith("processor")])
+        info["cpu"] = models[0] if models else "Unknown"
+        info["cpu_cores"] = cores
+    except Exception:
+        info["cpu"] = "Unknown"
+        info["cpu_cores"] = 0
+
+    # RAM
+    try:
+        mem_lines = open("/proc/meminfo").read().splitlines()
+        for l in mem_lines:
+            if l.startswith("MemTotal:"):
+                kb = int(l.split()[1])
+                info["ram_gb"] = round(kb / 1048576, 1)
+                break
+    except Exception:
+        info["ram_gb"] = 0
+
+    # Boot mode
+    info["uefi"] = os.path.isdir("/sys/firmware/efi")
+
+    # Disks
+    try:
+        res = subprocess.run(["lsblk", "-d", "-o", "NAME,SIZE,MODEL", "-J"],
+                             capture_output=True, text=True)
+        data = json.loads(res.stdout)
+        info["disks"] = [
+            {"name": "/dev/" + d["name"], "size": d.get("size", ""), "model": (d.get("model") or "").strip()}
+            for d in data.get("blockdevices", [])
+            if d.get("name", "").startswith(("sd", "nvme", "vd", "hd"))
+        ]
+    except Exception:
+        info["disks"] = []
+
+    # Network interfaces
+    try:
+        res = subprocess.run(["ip", "-o", "link", "show"],
+                             capture_output=True, text=True)
+        ifaces = []
+        for line in res.stdout.splitlines():
+            parts = line.split(":", 2)
+            if len(parts) >= 2:
+                name = parts[1].strip()
+                if name != "lo":
+                    ifaces.append(name)
+        info["network"] = ifaces
+    except Exception:
+        info["network"] = []
+
+    # GPU
+    try:
+        res = subprocess.run(["lspci"], capture_output=True, text=True)
+        gpus = [l.split(":", 2)[-1].strip() for l in res.stdout.splitlines()
+                if any(k in l for k in ("VGA", "3D", "Display"))]
+        info["gpus"] = gpus
+    except Exception:
+        info["gpus"] = []
+
+    return {"ok": True, **info}
+
+
 class Handler(BaseHTTPRequestHandler):
     """Minimal HTTP handler: serves the installer page and JSON API routes."""
 
@@ -65,6 +134,8 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/progress":
             with STATE_LOCK:
                 self._json(dict(STATE))
+        elif self.path == "/api/hardware":
+            self._json(_hardware_info())
         else:
             self._json({"ok": False, "error": "not found"}, 404)
 
