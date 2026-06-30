@@ -90,7 +90,10 @@ PAGE_HTML = r"""<!doctype html>
   <div class="warn"><b>WARNING: All data on the selected disk will be permanently erased.</b></div>
   <label>Disk: <select id="wholedisk"></select></label>
   <p id="autodisk-uefi"></p>
-  <button class="danger" onclick="confirmAutopart()">Erase disk and partition</button>
+  <div style="display:flex;gap:8px;">
+    <button onclick="show('mode')">Back</button>
+    <button class="danger" onclick="confirmAutopart()">Erase disk and partition</button>
+  </div>
 </div>
 
 <div id="p-custom" class="panel">
@@ -101,7 +104,10 @@ PAGE_HTML = r"""<!doctype html>
   <div id="partrows"></div>
   <button onclick="addRow()">+ Add partition</button>
   <hr class="section-rule">
-  <button class="danger" onclick="createLayout()">Create layout and format</button>
+  <div style="display:flex;gap:8px;">
+    <button onclick="show('mode')">Back</button>
+    <button class="danger" onclick="createLayout()">Create layout and format</button>
+  </div>
 </div>
 
 <div id="p-disk" class="panel">
@@ -111,7 +117,10 @@ PAGE_HTML = r"""<!doctype html>
   <label>Root partition: <select id="root"></select></label>
   <label>EFI partition (UEFI only, else leave blank):
     <select id="efi"><option value="">none</option></select></label>
-  <button onclick="checkPartitions()">Continue</button>
+  <div style="display:flex;gap:8px;">
+    <button onclick="show('mode')">Back</button>
+    <button onclick="checkPartitions()">Continue</button>
+  </div>
 </div>
 
 <div id="p-part" class="panel">
@@ -119,7 +128,10 @@ PAGE_HTML = r"""<!doctype html>
   <p>If your disk is not yet partitioned, open a terminal and run:</p>
   <pre>sudo cfdisk /dev/sdX</pre>
   <p>Create a root partition (and a 512M EFI partition for UEFI). Return here when done.</p>
-  <button onclick="loadDisks()">Re-scan partitions</button>
+  <div style="display:flex;gap:8px;">
+    <button onclick="show('mode')">Back</button>
+    <button onclick="loadDisks()">Re-scan partitions</button>
+  </div>
 </div>
 
 <div id="p-install" class="panel">
