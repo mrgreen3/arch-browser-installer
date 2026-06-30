@@ -7,7 +7,7 @@ import time
 
 from .parse import parse_rsync_progress
 from .state import (
-    INSTALL_STEPS, MNT, LOG_PATH,
+    INSTALL_STEPS, MNT, LOG_PATH, INSTALL_RUNNING,
     log, set_state, step_percent,
 )
 
@@ -432,3 +432,5 @@ def do_install(cfg):
     except Exception as e:
         log("ERROR: " + str(e))
         set_state(error=str(e))
+    finally:
+        INSTALL_RUNNING.clear()

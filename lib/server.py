@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler
 
 from .ui import PAGE_HTML
 from .parse import parse_lsblk, parse_lsblk_disks, validate_install_cfg, validate_custom_layout
-from .state import STATE, STATE_LOCK, new_state, log
+from .state import STATE, STATE_LOCK, INSTALL_RUNNING, new_state, log
 from .system import do_autopart, do_custompart, do_install, is_uefi, is_live_medium
 
 # Requests must carry one of these Host headers. The server binds localhost only,
@@ -19,6 +19,27 @@ ALLOWED_HOSTS = frozenset({
     "localhost:7777",
     "fruitbang.install:7777",
 })
+
+
+def _part_type(path):
+    """Return lsblk TYPE for path, or None if path is missing/not a blockdev."""
+    res = subprocess.run(["lsblk", "-no", "TYPE", path],
+                         capture_output=True, text=True)
+    return res.stdout.strip().splitlines()[0] if res.returncode == 0 else None
+
+
+def _validate_target_part(path, label):
+    """Return error string if path is not a usable partition, else None."""
+    if not path:
+        return None
+    if not os.path.exists(path):
+        return f"{label} {path} not found"
+    t = _part_type(path)
+    if t != "part":
+        return f"{label} {path} is not a partition"
+    if is_live_medium(path):
+        return f"{label} {path} is on the live install medium"
+    return None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -72,7 +93,10 @@ class Handler(BaseHTTPRequestHandler):
         """Handle write actions: autopart, partition validate, install, reboot."""
         if not self._host_ok():
             return self._json({"ok": False, "error": "forbidden host"}, 403)
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return self._json({"ok": False, "error": "bad content-length"}, 400)
         raw = self.rfile.read(length).decode() if length else "{}"
         try:
             body = json.loads(raw)
@@ -134,12 +158,15 @@ class Handler(BaseHTTPRequestHandler):
             err = validate_install_cfg(body)
             if err:
                 return self._json({"ok": False, "error": err}, 400)
-            if is_live_medium(body["root_part"]):
-                return self._json({"ok": False,
-                                   "error": "root partition is on the live medium — refusing to install over it"}, 400)
+            for key, label in (("root_part", "root"), ("efi_part", "EFI"),
+                               ("swap_part", "swap"), ("home_part", "home")):
+                err = _validate_target_part(body.get(key), label)
+                if err:
+                    return self._json({"ok": False, "error": err}, 400)
             with STATE_LOCK:
-                if STATE["percent"] > 0 and not STATE["done"] and STATE["error"] is None:
+                if INSTALL_RUNNING.is_set():
                     return self._json({"ok": False, "error": "install already in progress"}, 409)
+                INSTALL_RUNNING.set()
                 STATE.update(new_state())
             threading.Thread(target=do_install, args=(body,), daemon=True).start()
             self._json({"ok": True})
