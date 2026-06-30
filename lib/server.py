@@ -9,6 +9,7 @@ from .ui import PAGE_HTML
 from .parse import parse_lsblk, parse_lsblk_disks, validate_install_cfg, validate_custom_layout
 from .state import STATE, STATE_LOCK, INSTALL_RUNNING, new_state, log
 from .system import do_autopart, do_custompart, do_install, is_uefi, is_live_medium
+from .hwinfo import collect_hardware
 
 # Requests must carry one of these Host headers. The server binds localhost only,
 # but that alone doesn't stop another browser tab POSTing here: ui.py sends
@@ -83,6 +84,12 @@ class Handler(BaseHTTPRequestHandler):
                 "disks": parse_lsblk_disks(res.stdout),
                 "uefi": is_uefi(),
             })
+        elif self.path == "/api/hardware":
+            try:
+                data = collect_hardware()
+                self._json({"ok": True, "hardware": data})
+            except Exception as exc:
+                self._json({"ok": False, "error": str(exc)}, 500)
         elif self.path == "/api/progress":
             with STATE_LOCK:
                 self._json(dict(STATE))
