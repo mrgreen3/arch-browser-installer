@@ -1,25 +1,37 @@
+import hmac
 import json
 import os
+import secrets
 import subprocess
 import threading
 
 from http.server import BaseHTTPRequestHandler
 
-from .ui import PAGE_HTML
+from .ui import render_page
 from .parse import parse_lsblk, parse_lsblk_disks, validate_install_cfg, validate_custom_layout
 from .state import STATE, STATE_LOCK, INSTALL_RUNNING, new_state, log
 from .system import do_autopart, do_custompart, do_install, is_uefi, is_live_medium
 from .hwinfo import collect_hardware
 
-# Requests must carry one of these Host headers. The server binds localhost only,
-# but that alone doesn't stop another browser tab POSTing here: ui.py sends
-# text/plain bodies, which skip CORS preflight, so cross-origin/DNS-rebind
-# requests would otherwise reach the API. Port mirrors abi-installer.py PORT.
+# Requests must carry one of these Host headers. This blocks DNS-rebinding
+# (an attacker domain that resolves to 127.0.0.1 but whose Host header still
+# names the attacker's hostname). Port mirrors abi-installer.py PORT.
 ALLOWED_HOSTS = frozenset({
     "127.0.0.1:7777",
     "localhost:7777",
     "fruitbang.install:7777",
 })
+
+# Host header alone does NOT stop cross-origin CSRF: Host reflects the
+# request's destination, not the calling page's origin, so any other tab/
+# iframe open in the same browser can fetch() this server directly. ui.py's
+# JSON POSTs use no explicit Content-Type, making them CORS "simple
+# requests" (no preflight) that a background fetch() from anywhere can fire
+# blind. A per-boot random token, embedded server-side into the page HTML
+# and required on every state-changing POST, closes that gap — a remote
+# page has no way to read this value.
+CSRF_TOKEN = secrets.token_hex(32)
+PAGE_HTML = render_page(CSRF_TOKEN)
 
 
 def _part_type(path):
@@ -100,6 +112,8 @@ class Handler(BaseHTTPRequestHandler):
         """Handle write actions: autopart, partition validate, install, reboot."""
         if not self._host_ok():
             return self._json({"ok": False, "error": "forbidden host"}, 403)
+        if not hmac.compare_digest(self.headers.get("X-Abi-Token", ""), CSRF_TOKEN):
+            return self._json({"ok": False, "error": "forbidden (bad or missing csrf token)"}, 403)
         try:
             length = int(self.headers.get("Content-Length", 0))
         except ValueError:
@@ -111,6 +125,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": False, "error": "bad json"}, 400)
 
         if self.path == "/api/autopart":
+            if INSTALL_RUNNING.is_set():
+                return self._json({"ok": False, "error": "install already in progress"}, 409)
             disk = body.get("disk", "")
             if not disk or not os.path.exists(disk):
                 return self._json({"ok": False, "error": "disk not found"}, 400)
@@ -130,6 +146,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 500)
 
         elif self.path == "/api/custompart":
+            if INSTALL_RUNNING.is_set():
+                return self._json({"ok": False, "error": "install already in progress"}, 409)
             disk = body.get("disk", "")
             if not disk or not os.path.exists(disk):
                 return self._json({"ok": False, "error": "disk not found"}, 400)

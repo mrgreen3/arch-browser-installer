@@ -73,6 +73,10 @@ PART_SIZE_RE = re.compile(r"^\d{1,6}(\.\d{1,2})?[MGT]$")
 VALID_FS = frozenset({"ext4", "btrfs", "xfs"})
 VALID_ROLES = frozenset({"efi", "root", "swap", "home"})
 
+# Only EFI had a size floor — an explicit "0M"/"1M" root or swap passed
+# validation and got handed to sfdisk after the disk was already wiped.
+MIN_SIZE_MIB = {"root": 4096, "swap": 128, "home": 512}
+
 
 def _size_to_mib(size):
     """Convert a validated size string (e.g. '512M', '30G') to MiB as a float."""
@@ -127,6 +131,8 @@ def validate_custom_layout(parts, uefi):
                 return "only the last partition may use remaining space"
         elif not PART_SIZE_RE.match(size):
             return f"invalid size: {p.get('size')!r} (use e.g. 512M, 30G)"
+        elif p["role"] in MIN_SIZE_MIB and _size_to_mib(size) < MIN_SIZE_MIB[p["role"]]:
+            return f"{p['role']} partition should be at least {MIN_SIZE_MIB[p['role']]}M"
 
         if p["role"] in ("root", "home") and p.get("fs", "ext4") not in VALID_FS:
             return f"invalid filesystem: {p.get('fs')!r}"

@@ -1,4 +1,4 @@
-PAGE_HTML = r"""<!doctype html>
+PAGE_HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -280,6 +280,14 @@ git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si</code></p>
 </div>
 
 <script>
+const CSRF_TOKEN = "__CSRF_TOKEN__";
+function apiPost(url, obj) {
+  return fetch(url, {
+    method: 'POST',
+    headers: {'X-Abi-Token': CSRF_TOKEN},
+    body: JSON.stringify(obj),
+  });
+}
 const sel = {};  // chosen partitions carried through panels
 const STEP_MAP = {
   welcome:'welcome', mode:'disk', autodisk:'disk', custom:'disk',
@@ -320,7 +328,7 @@ async function confirmAutopart() {
   if (!disk) return showErr('No disk selected');
   const btn = document.querySelector('#p-autodisk .danger');
   btn.disabled = true; btn.textContent = 'Partitioning…';
-  const r = await fetch('/api/autopart', {method:'POST', body: JSON.stringify({disk})});
+  const r = await apiPost('/api/autopart', {disk});
   const d = await r.json();
   btn.disabled = false; btn.textContent = 'Erase disk and partition';
   if (!d.ok) return showErr(d.error);
@@ -400,7 +408,7 @@ async function createLayout() {
   btn.disabled = true; btn.textContent = 'Creating…';
   let d;
   try {
-    const r = await fetch('/api/custompart', {method:'POST', body: JSON.stringify({disk, parts: rows})});
+    const r = await apiPost('/api/custompart', {disk, parts: rows});
     d = await r.json();
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Create layout and format';
@@ -483,8 +491,7 @@ async function checkPartitions() {
   showErr('');
   sel.root_part = document.getElementById('root').value;
   sel.efi_part = document.getElementById('efi').value;
-  const r = await fetch('/api/partition', {method:'POST',
-    body: JSON.stringify(sel)});
+  const r = await apiPost('/api/partition', sel);
   const d = await r.json();
   if (!d.ok) return showErr(d.error);
   show('configure');
@@ -502,7 +509,7 @@ async function startInstall() {
     locale: document.getElementById('locale').value,
     keymap: document.getElementById('keymap').value,
   });
-  const r = await fetch('/api/install', {method:'POST', body: JSON.stringify(cfg)});
+  const r = await apiPost('/api/install', cfg);
   const d = await r.json();
   if (!d.ok) return showErr(d.error);
   _maxPct = 0;
@@ -520,10 +527,17 @@ async function poll() {
   if (s.done) { document.getElementById('fill').classList.remove('running'); show('done'); return; }
   setTimeout(poll, 2000);
 }
-async function doReboot() { await fetch('/api/reboot', {method:'POST', body:'{}'}); }
+async function doReboot() { await apiPost('/api/reboot', {}); }
 </script>
 <footer style="text-align:center; margin-top:40px; font-size:0.8em; color:#6b6050;">
   &copy; 2026 FruitBang &mdash; MIT Licence
 </footer>
 </body>
 </html>"""
+
+
+def render_page(csrf_token: str) -> str:
+    """Fill in the per-boot CSRF token. Plain string replace, not .format() —
+    the page is full of literal { } in its CSS/JS that would collide with
+    str.format's brace syntax."""
+    return PAGE_HTML_TEMPLATE.replace("__CSRF_TOKEN__", csrf_token)

@@ -68,6 +68,20 @@ def _parse_disks(lsblk_json):
     return disks
 
 
+def _split_lspci_mm(line):
+    """Split an `lspci -mm` line respecting ITS quoting convention.
+
+    lspci -mm quotes fields with double quotes only; it never uses single
+    quotes as a quote character. shlex.split's default POSIX mode treats a
+    bare apostrophe (e.g. inside a vendor name) as starting an unterminated
+    quoted string and raises — restricting the lexer to '"' avoids that.
+    """
+    lex = shlex.shlex(line, posix=True)
+    lex.whitespace_split = True
+    lex.quotes = '"'
+    return list(lex)
+
+
 def _parse_lspci(lspci_mm):
     gpus = []
     wifi = None
@@ -76,7 +90,7 @@ def _parse_lspci(lspci_mm):
         if not line:
             continue
         try:
-            parts = shlex.split(line)
+            parts = _split_lspci_mm(line)
         except ValueError:
             continue
         if len(parts) < 4:

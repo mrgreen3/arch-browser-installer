@@ -5,10 +5,11 @@ import re
 import subprocess
 import time
 
-from .parse import parse_rsync_progress
+from .parse import parse_rsync_progress, validate_install_cfg
 from .state import (
     INSTALL_STEPS, MNT, LOG_PATH, INSTALL_RUNNING,
     log, set_state, step_percent,
+    mark_install_started, mark_install_done,
 )
 
 # Map ui.py xkb layout values to valid console keymaps (from localectl
@@ -61,14 +62,40 @@ def whole_disk(path):
     return path
 
 
+def _resolve_device_spec(spec):
+    """Resolve a UUID=/LABEL=/PARTUUID=-style device spec to a /dev/ path."""
+    if spec.startswith("/dev/"):
+        return spec
+    if "=" not in spec:
+        return None
+    tag, value = spec.split("=", 1)
+    res = subprocess.run(["blkid", f"-t{tag}={value}", "-o", "device"],
+                         capture_output=True, text=True)
+    lines = res.stdout.strip().splitlines()
+    return lines[0] if lines else None
+
+
 def live_disk():
     """Whole-disk path backing the running live medium, or None if undeterminable."""
     res = subprocess.run(["findmnt", "-n", "-o", "SOURCE", "/run/archiso/bootmnt"],
                          capture_output=True, text=True)
     src = res.stdout.strip()
-    if not src:
+    if src:
+        return whole_disk(src)
+
+    # Fallback: archiso's own init hook always sets archisodevice= on the
+    # kernel cmdline to the boot device spec, even on a distro whose boot
+    # layout doesn't leave bootmnt mounted at the usual path.
+    try:
+        with open("/proc/cmdline") as f:
+            cmdline = f.read()
+    except OSError:
         return None
-    return whole_disk(src)
+    m = re.search(r"\barchisodevice=(\S+)", cmdline)
+    if not m:
+        return None
+    dev = _resolve_device_spec(m.group(1))
+    return whole_disk(dev) if dev else None
 
 
 def is_live_medium(target):
@@ -82,6 +109,32 @@ def is_live_medium(target):
         log("WARNING: could not determine live medium; skipping live-disk guard")
         return False
     return whole_disk(target) == live
+
+
+def _wait_for_partitions(disk, expected_count, timeout=10):
+    """Poll lsblk until `expected_count` partitions appear under disk.
+
+    A flat sleep(1) after partprobe is a known-flaky pattern on slow/USB/
+    spinning media — udev may not have created the /dev/sdXN nodes yet.
+    Returns as soon as enough partitions are visible; gives up silently at
+    timeout (the caller's own lsblk-based count check still catches it).
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        res = subprocess.run(["lsblk", "-J", "-o", "NAME,TYPE", disk],
+                             capture_output=True, text=True)
+        try:
+            data = json.loads(res.stdout)
+        except ValueError:
+            data = {}
+        count = sum(
+            1 for dev in data.get("blockdevices", [])
+            for child in dev.get("children", [])
+            if child.get("type") == "part"
+        )
+        if count >= expected_count:
+            return
+        time.sleep(0.3)
 
 
 def do_autopart(disk):
@@ -107,7 +160,7 @@ def do_autopart(disk):
         raise RuntimeError(f"sfdisk failed: {res.stderr.strip()}")
 
     subprocess.run(["partprobe", disk], capture_output=True)
-    time.sleep(1)
+    _wait_for_partitions(disk, 2 if uefi else 1)
 
     # Discover created partition paths via lsblk
     res2 = subprocess.run(
@@ -186,7 +239,7 @@ def do_custompart(disk, parts, uefi):
         raise RuntimeError(f"sfdisk failed: {res.stderr.strip()}")
 
     subprocess.run(["partprobe", disk], capture_output=True)
-    time.sleep(1)
+    _wait_for_partitions(disk, len(parts))
 
     res2 = subprocess.run(
         ["lsblk", "-J", "-o", "NAME,TYPE", disk],
@@ -234,19 +287,25 @@ def copy_airootfs():
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     for line in proc.stdout:
+        log(line.rstrip("\n"))
         pct = parse_rsync_progress(line)
         if pct is not None:
             set_state(percent=step_percent(2, pct))
     proc.wait()
     if proc.returncode != 0:
-        raise RuntimeError("rsync copy failed")
+        raise RuntimeError(f"rsync copy failed (exit {proc.returncode}); see {LOG_PATH}")
 
 
 def sync_upperdir():
     """Copy live-session writes (cowspace upperdir) into the installed root."""
-    matches = glob.glob("/run/archiso/cowspace/**/upperdir", recursive=True)
-    matches = [m for m in matches if "/x86_64/" in m]
+    matches = sorted(
+        m for m in glob.glob("/run/archiso/cowspace/**/upperdir", recursive=True)
+        if "/x86_64/" in m
+    )
+    if len(matches) > 1:
+        log(f"WARNING: multiple upperdir matches found, using first: {matches}")
     if matches:
+        log(f"syncing upperdir: {matches[0]}")
         run(["rsync", "-aAXH", matches[0] + "/", MNT + "/"])
 
 
@@ -379,9 +438,26 @@ def cleanup():
     chroot("sed -i 's/^# %wheel ALL=(ALL:ALL) ALL$/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers")
 
 
+def _cleanup_mounts():
+    """Best-effort teardown after a failed install, so a retry doesn't hit
+    'already mounted' against leftover state from the failed attempt."""
+    subprocess.run(["swapoff", "-a"], capture_output=True)
+    subprocess.run(["umount", "-R", MNT], capture_output=True)
+
+
 def do_install(cfg):
     """Background install worker. cfg keys: root_part, efi_part, hostname, username, password."""
+    mark_install_started()
     try:
+        # server.py already validates cfg before spawning this thread, but
+        # do_install shouldn't rely on that being its only caller — hostname/
+        # username/timezone/keymap all get interpolated into arch-chroot bash
+        # strings further down, so an unvalidated cfg here means shell
+        # injection, not just a bad install.
+        err = validate_install_cfg(cfg)
+        if err:
+            raise ValueError(err)
+
         set_state(step=INSTALL_STEPS[0], percent=step_percent(0, 100))
         uefi = is_uefi()
 
@@ -429,8 +505,13 @@ def do_install(cfg):
         set_state(step=INSTALL_STEPS[8], percent=step_percent(8, 50))
         cleanup()
         set_state(step="Done", percent=100, done=True)
+        mark_install_done()
     except Exception as e:
         log("ERROR: " + str(e))
+        _cleanup_mounts()
         set_state(error=str(e))
+        # Marker deliberately left in place on failure — see mark_install_started's
+        # docstring in state.py. The operator should check /mnt state before
+        # trying again, not have the next boot silently forget this happened.
     finally:
         INSTALL_RUNNING.clear()

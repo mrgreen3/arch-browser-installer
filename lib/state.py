@@ -1,7 +1,28 @@
+import os
 import threading
 
 LOG_PATH = "/tmp/fb-install.log"
 MNT = "/mnt"
+
+# Written when an install starts, removed only on clean success. STATE and
+# INSTALL_RUNNING are pure process memory — if the server process dies
+# mid-install (OOM, or the launcher killing it), a restart has no record
+# anything was in progress. This marker survives the process so the next
+# startup can at least warn the operator instead of silently offering a
+# fresh install against a half-mounted/half-copied disk.
+MARKER_PATH = "/tmp/fb-install.marker"
+
+
+def mark_install_started():
+    with open(MARKER_PATH, "w") as f:
+        f.write("install in progress\n")
+
+
+def mark_install_done():
+    try:
+        os.remove(MARKER_PATH)
+    except FileNotFoundError:
+        pass
 
 # Step weights must sum to 100. Index aligns with INSTALL_STEPS order.
 STEP_WEIGHTS = [2, 3, 60, 5, 8, 2, 5, 10, 5]
